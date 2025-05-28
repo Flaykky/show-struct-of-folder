@@ -122,6 +122,8 @@ MIT License
 
 ## Install to 'path'
 ```bash
+git clone https://github.com/Flaykky/show-struct-of-folder
+cd show-struct-of-folder
 rustc ssp.rs -o ssp
 sudo mv ssp /usr/local/bin/ssp
 ```
