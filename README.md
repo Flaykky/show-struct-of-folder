@@ -110,10 +110,6 @@ Error: './file.txt' is not a directory
 
 `ssp` is a handy tool for developers who want a clean, structured overview of their project folders from the command line. Written in Rust, it is fast and efficient, with a clear output style.
 
-## 📘 License
-
-MIT License
-
 ## 🛠 Future Improvements
 
 * Add CLI options for showing hidden files.
@@ -127,4 +123,9 @@ cd show-struct-of-folder
 rustc ssp.rs -o ssp
 sudo mv ssp /usr/local/bin/ssp
 ```
+
+
+## 📘 License
+
+MIT License
 
