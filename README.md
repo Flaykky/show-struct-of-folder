@@ -125,7 +125,6 @@ sudo mv ssp /usr/local/bin/ssp
 ```
 
 
-## 📘 License
+## License
 
-MIT License
-
+Distributed under the MIT License. See [LICENSE](LICENSE) file for details.
