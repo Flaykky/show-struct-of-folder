@@ -1,4 +1,4 @@
-# `ssp` - Show Structure of Project
+# ssp - Show Structure of Project
 
 A simple CLI utility written in Rust to display the directory structure of a project in a tree-like format.
 
@@ -115,6 +115,7 @@ Error: './file.txt' is not a directory
 * Add CLI options for showing hidden files.
 * Support for file type icons (UTF-8 based).
 * Output to file (e.g., Markdown tree structure).
+* Recode on other systems
 
 ## Install to 'path'
 ```bash
