@@ -117,7 +117,7 @@ Error: './file.txt' is not a directory
 * Output to file (e.g., Markdown tree structure).
 * Recode on other systems
 
-## Install to 'path'
+## Install to 'path' in linux 
 ```bash
 git clone https://github.com/Flaykky/show-struct-of-folder
 cd show-struct-of-folder
