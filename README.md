@@ -115,7 +115,7 @@ Error: './file.txt' is not a directory
 * Add CLI options for showing hidden files.
 * Support for file type icons (UTF-8 based).
 * Output to file (e.g., Markdown tree structure).
-* Recode on other systems
+* Recode on other operating systems
 
 ## Install to 'path' in linux 
 ```bash
