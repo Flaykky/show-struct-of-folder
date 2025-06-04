@@ -117,7 +117,7 @@ Error: './file.txt' is not a directory
 * Output to file (e.g., Markdown tree structure).
 * Recode on other operating systems
 
-## Installing sso to **system path in Linux**
+## Installing the ssp into to **system path in Linux**
 ```bash
 git clone https://github.com/Flaykky/show-struct-of-folder
 cd show-struct-of-folder
