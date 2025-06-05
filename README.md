@@ -125,6 +125,10 @@ rustc ssp.rs -o ssp
 sudo mv ssp /usr/local/bin/ssp
 ```
 
+## Requirments
+
+* Rust compiler
+
 
 ## License
 
