@@ -127,7 +127,8 @@ sudo mv ssp /usr/local/bin/ssp
 
 ## Requirments
 
-* Rust compiler
+* Rust compiler (rustc)
+* Unix-like operating system
 
 
 ## License
