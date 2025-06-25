@@ -1,4 +1,4 @@
-# SSP - Show Structure of Project
+# SSP - Show Structure of Project (or folder)
 
 A simple CLI utility written in Rust to display the directory structure of a project in a tree-like format.
 
