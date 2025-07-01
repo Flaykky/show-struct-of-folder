@@ -1,114 +1,194 @@
-# SSP - Show Structure of Project (or folder)
+## SSP – Show Structure of Project
 
-A simple CLI utility written in Rust to display the directory structure of a project in a tree-like format.
+A small, configurable CLI utility in Rust to render a directory tree with customizable ASCII symbols via an external config file.
+
+---
 
 ## 📌 Overview
 
-`ssp` (short for **Show Structure of Project**) displays a visual representation of a folder's contents using ASCII tree symbols, similar to the Unix `tree` command. It skips common ignored folders like `.git` and `node_modules`, and visually distinguishes directories from files.
+`ssp` (short for **Show Structure of Project**) outputs a tree‑like visualization of a folder’s hierarchy. It:
 
-Example output when run inside a project folder named `CVPN`:
+* Skips common ignored directories (`.git`, `node_modules`, `__pycache__`, etc.).
+* Lists directories first, then files, both sorted alphabetically.
+* Supports multiple “display modes” (sets of ASCII connectors) via a simple TOML config.
+* Lets you choose or switch modes on the fly with `--mode`.
 
-```text
-CVPN/
-│── include/
-│   ├── tunnel.h
-│   ├── transport.h
-│   ├── crypto.h
-│   ├── config.h
-│   └── log.h
-│
-│── src/
-│   ├── main.c
-│   ├── tunnel.c
-│   ├── transport.c
-│   ├── crypto.c
-│   ├── config.c
-│   └── log.c
-│
-│── config/
-│   ├── client.conf
-│   └── server.conf
-│
-├── CMakeLists.txt
-├── README.md
-├── LICENSE
-└── .gitignore
-```
+---
 
-## 🚀 Usage
+## 🚀 Installation
+
+1. **Clone the repo**
+
+   ```bash
+   git clone https://github.com/Flaykky/show-struct-of-folder
+   cd show-struct-of-folder
+   ```
+2. **Build with Cargo**
+
+   ```bash
+   cargo build --release
+   ```
+3. **(Optional) Install system‑wide**
+
+   ```bash
+   sudo cp target/release/ssp /usr/local/bin/
+   ```
+
+---
+
+## 🔧 Usage
 
 ```bash
-ssp                # Show structure of current directory
-ssp ./include      # Show structure of ./include directory
+# Show tree of current directory, using default mode
+ssp
+
+# Show tree of a specific folder
+ssp ./src
+
+# Specify a mode defined in config
+ssp --mode=new
 ```
 
-## 📁 Features
+If no path is given, `ssp` defaults to the current working directory.
 
-* Display root directory name.
-* Tree-like indentation for files and folders.
-* Directories are listed before files.
-* Hidden/system folders like `.git`, `node_modules`, and `__pycache__` are excluded.
+---
 
-## 🔧 Implementation Details
+## 📁 Configuration
 
-### Entry Point: `main()`
+`ssp` supports a `ssp.toml` file in the current directory (or home directory) for mode definitions.
 
-* Parses command line arguments.
-* Defaults to current directory if no path is provided.
-* Validates the input path.
-* Lists entries, filters, and sorts them.
-* Calls appropriate recursive functions for display.
+### Example `ssp.toml`
+
+```toml
+default_mode = "fancy"
+
+[modes.old]
+vertical = "│  "
+tee      = "├──"
+elbow    = "└──"
+indent   = "    "
+
+[modes.new]
+vertical = "│  "
+tee      = "╠══"
+elbow    = "╚══"
+indent   = "   "
+
+[modes.fancy]
+vertical = "┃   "
+tee      = "┣━ "
+elbow    = "┗━ "
+indent   = "    "
+```
+
+* **`default_mode`**: (optional) name of the mode used when `--mode` is omitted.
+* **`modes.<name>`**: each mode must define four fields:
+
+  * `vertical`: the “│”‑style branch filler
+  * `tee`: the middle‑branch connector (e.g. `├──`)
+  * `elbow`: the last‑child connector (e.g. `└──`)
+  * `indent`: the space inserted after branching
+
+You can add as many modes as you like.
+
+---
+
+## ⚙️ Implementation Details
+
+### `main()`
+
+1. Parse `--mode=<name>` and optional path argument.
+2. Load `ssp.toml` (or fall back to built‑in defaults).
+3. Validate target path (must exist and be a directory).
+4. Read entries, filter & sort, then print root and recurse.
 
 ### `filter_and_sort_entries()`
 
-* Removes hidden/system folders.
-* Sorts directories before files.
-* Performs alphabetical sort within each group.
+* Filters out directories starting with `.` plus `node_modules`, `__pycache__`, `.git`.
+* Sorts so directories come before files, then alphabetically.
 
-### `print_dir_structure()`
+### `print_dir()` & `print_file()`
 
-* Recursively prints folder contents.
-* Applies appropriate indentation and connector symbols (`├──`, `└──`, etc.).
-* Calls itself for subdirectories.
+* Choose appropriate connector (`tee` vs. `elbow`) based on “is last child” and root status.
+* Prepend `vertical` or `indent` to create proper nesting.
+* Recursively descend into subdirectories.
 
-### `print_file_structure()`
+---
 
-* Prints individual file entries with tree connector.
+## 🔍 Examples
+
+### Default (built‑in “old”) mode
+
+```text
+my_project/
+│  ├── src
+│  │  ├── main.rs
+│  │  └── lib.rs
+│  └── Cargo.toml
+```
+
+### “new” mode (using `╠══` / `╚══`)
+
+```bash
+ssp --mode=new
+```
+
+```text
+my_project/
+╠══ src
+║   ╠══ main.rs
+║   ╚══ lib.rs
+╚══ Cargo.toml
+```
+
+### “fancy” mode (custom in `ssp.toml`)
+
+```bash
+ssp --mode=fancy
+```
+
+```text
+my_project/
+┣━ src
+┃   ┣━ main.rs
+┃   ┗━ lib.rs
+┗━ Cargo.toml
+```
+
+---
+
+## ❗ Error Handling
+
+* **Invalid path**:
+
+  ```bash
+  Error: '/foo/bar' does not exist
+  ```
+* **Not a directory**:
+
+  ```bash
+  Error: '/foo/file.txt' is not a directory
+  ```
+* **Unknown mode**:
+
+  ```bash
+  panic!("Mode 'xyz' not found in config")
+  ```
+
+---
 
 ## 📦 Dependencies
 
-* Uses standard Rust libraries:
+* **serde** + **serde\_derive** for deserializing TOML/JSON
+* **toml** crate (or swap out for JSON)
+* Standard Rust libraries: `std::env`, `std::fs`, `std::path`
 
-  * `std::env`
-  * `std::fs`
-  * `std::path`
-
-## 📄 Example
-
-Run from inside a project root:
-
-```bash
-ssp
-```
-
-Run for a specific directory:
-
-```bash
-ssp src
-```
-
-## ❗ Errors
-
-* Invalid path or missing directory:
-
-```bash
-Error: Path './notfound' does not exist
-Error: './file.txt' is not a directory
-```
+---
 
 ## ✅ Summary
 
-`ssp` is a handy tool for developers who want a clean, structured overview of their project folders from the command line. Written in Rust, it is fast and efficient, with a clear output style.
+`ssp` is a flexible, mode‑driven tree viewer that you can tailor by editing a simple `ssp.toml`. Perfect for quickly inspecting nested folder structures with your preferred ASCII style.
+
 
 ## 🛠 Future Improvements
 
