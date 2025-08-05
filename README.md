@@ -1,215 +1,231 @@
 ## SSP – Show Structure of Project
 
-A small, configurable CLI utility in Rust to render a directory tree with customizable ASCII symbols via an external config file.
+A command-line tool for displaying directory structures with various filtering and formatting options.
 
----
+## Table of Contents
 
-## 📌 Overview
+- [Installation](#installation)
+- [Usage](#usage)
+- [Options](#options)
+- [Examples](#examples)
+- [Features](#features)
+- [Configuration](#configuration)
+- [Error Handling](#error-handling)
 
-`ssp` (short for **Show Structure of Project**) outputs a tree‑like visualization of a folder’s hierarchy. It:
+## Installation
 
-* Skips common ignored directories (`.git`, `node_modules`, `__pycache__`, etc.).
-* Lists directories first, then files, both sorted alphabetically.
-* Supports multiple “display modes” (sets of ASCII connectors) via a simple TOML config.
-* Lets you choose or switch modes on the fly with `--mode`.
-
----
-
-## 🚀 Installation
-
-1. **Clone the repo**
-
-   ```bash
-   git clone https://github.com/Flaykky/show-struct-of-folder
-   cd show-struct-of-folder
-   ```
-2. **Build with Cargo**
-
-   ```bash
-   cargo build --release
-   ```
-3. **(Optional) Install system‑wide**
-
-   ```bash
-   sudo cp target/release/ssp /usr/local/bin/
-   ```
-
----
-
-## 🔧 Usage
+To install SSP, you need to have Rust installed on your system. Clone the repository and build the project:
 
 ```bash
-# Show tree of current directory, using default mode
+git clone <repository-url>
+cd ssp
+cargo build --release
+```
+
+The executable will be located at `target/release/ssp`.
+
+## Usage
+
+```bash
+ssp [OPTIONS] [DIRECTORY]
+```
+
+If no directory is specified, SSP will display the structure of the current working directory.
+
+## Options
+
+| Flag | Long Form | Description | Example |
+|------|-----------|-------------|---------|
+| `-i` | `--ignore` | Ignore specified folder | `ssp -i node_modules` |
+| `-of` | `--only-folders` | Show only directories | `ssp -of` |
+| `-l` | `--lines` | Show line count for files | `ssp -l` |
+| `-e` | `--extension` | Filter by file extension | `ssp -e rs` |
+| `-d` | `--depth` | Limit display depth | `ssp -d 2` |
+| `-h` | `--help` | Show help message | `ssp -h` |
+
+### Detailed Option Descriptions
+
+#### `--ignore` / `-i`
+Ignores specified folders when displaying the directory structure. You can specify multiple folders by using the flag multiple times.
+
+**Default ignored folders**: `.git`, `node_modules`, `__pycache__`
+
+#### `--only-folders` / `-of`
+Displays only directories, excluding all files from the output.
+
+#### `--lines` / `-l`
+Shows the number of lines in each file alongside the filename. This is particularly useful for code analysis.
+
+#### `--extension` / `-e`
+Filters files to show only those with the specified extension. For example, `-e rs` will show only Rust files.
+
+#### `--depth` / `-d`
+Limits the depth of directory traversal. For example, `-d 2` will show only up to 2 levels deep.
+
+#### `--help` / `-h`
+Displays the help message with usage instructions.
+
+## Examples
+
+### Basic Usage
+```bash
+# Display current directory structure
 ssp
 
-# Show tree of a specific folder
-ssp ./src
-
-# Specify a mode defined in config
-ssp --mode=new
+# Display specific directory structure
+ssp /path/to/project
 ```
 
-If no path is given, `ssp` defaults to the current working directory.
-
----
-
-## 📁 Configuration
-
-`ssp` supports a `ssp.toml` file in the current directory (or home directory) for mode definitions.
-
-### Example `ssp.toml`
-
-```toml
-default_mode = "fancy"
-
-[modes.old]
-vertical = "│  "
-tee      = "├──"
-elbow    = "└──"
-indent   = "    "
-
-[modes.new]
-vertical = "│  "
-tee      = "╠══"
-elbow    = "╚══"
-indent   = "   "
-
-[modes.fancy]
-vertical = "┃   "
-tee      = "┣━ "
-elbow    = "┗━ "
-indent   = "    "
-```
-
-* **`default_mode`**: (optional) name of the mode used when `--mode` is omitted.
-* **`modes.<name>`**: each mode must define four fields:
-
-  * `vertical`: the “│”‑style branch filler
-  * `tee`: the middle‑branch connector (e.g. `├──`)
-  * `elbow`: the last‑child connector (e.g. `└──`)
-  * `indent`: the space inserted after branching
-
-You can add as many modes as you like.
-
----
-
-## ⚙️ Implementation Details
-
-### `main()`
-
-1. Parse `--mode=<name>` and optional path argument.
-2. Load `ssp.toml` (or fall back to built‑in defaults).
-3. Validate target path (must exist and be a directory).
-4. Read entries, filter & sort, then print root and recurse.
-
-### `filter_and_sort_entries()`
-
-* Filters out directories starting with `.` plus `node_modules`, `__pycache__`, `.git`.
-* Sorts so directories come before files, then alphabetically.
-
-### `print_dir()` & `print_file()`
-
-* Choose appropriate connector (`tee` vs. `elbow`) based on “is last child” and root status.
-* Prepend `vertical` or `indent` to create proper nesting.
-* Recursively descend into subdirectories.
-
----
-
-## 🔍 Examples
-
-### Default (built‑in “old”) mode
-
-```text
-my_project/
-│  ├── src
-│  │  ├── main.rs
-│  │  └── lib.rs
-│  └── Cargo.toml
-```
-
-### “new” mode (using `╠══` / `╚══`)
-
+### Filtering Examples
 ```bash
-ssp --mode=new
+# Show only folders
+ssp -of
+
+# Show only .rs files with line counts
+ssp -l -e rs
+
+# Ignore multiple folders
+ssp -i node_modules -i target -i .git
+
+# Limit depth to 2 levels
+ssp -d 2
+
+# Combine multiple options
+ssp -of -d 3 -i build
 ```
 
-```text
-my_project/
-╠══ src
-║   ╠══ main.rs
-║   ╚══ lib.rs
-╚══ Cargo.toml
+### Sample Output
+
+**Basic output:**
+```
+project/
+├── src
+│   ├── main.rs
+│   └── utils.rs
+├── tests
+│   └── integration.rs
+├── Cargo.toml
+└── README.md
 ```
 
-### “fancy” mode (custom in `ssp.toml`)
-
-```bash
-ssp --mode=fancy
+**With line counts:**
+```
+project/
+├── src
+│   ├── main.rs (150)
+│   └── utils.rs (75)
+├── tests
+│   └── integration.rs (200)
+├── Cargo.toml (25)
+└── README.md (50)
 ```
 
-```text
-my_project/
-┣━ src
-┃   ┣━ main.rs
-┃   ┗━ lib.rs
-┗━ Cargo.toml
+**Only folders with limited depth:**
+```
+project/
+├── src
+│   ├── main
+│   └── utils
+└── docs
+    ├── api
+    └── guides
 ```
 
----
+## Features
 
-## ❗ Error Handling
+### Tree Structure Display
+SSP displays directory structures using Unicode tree characters for clear visualization:
+- `├──` for items with siblings below
+- `└──` for the last item in a directory
+- `│   ` for vertical continuation lines
 
-* **Invalid path**:
+### Automatic Sorting
+Entries are automatically sorted with directories appearing first, followed by files, both in alphabetical order.
 
-  ```bash
-  Error: '/foo/bar' does not exist
-  ```
-* **Not a directory**:
+### Default Ignore Patterns
+SSP automatically ignores common development folders:
+- `.git` - Git metadata
+- `node_modules` - Node.js dependencies
+- `__pycache__` - Python cache files
 
-  ```bash
-  Error: '/foo/file.txt' is not a directory
-  ```
-* **Unknown mode**:
+### Cross-Platform Compatibility
+Works on Windows, macOS, and Linux systems.
 
-  ```bash
-  panic!("Mode 'xyz' not found in config")
-  ```
+## Configuration
 
----
+SSP currently doesn't require any configuration files. All settings are passed through command-line arguments.
 
-## 📦 Dependencies
+## Error Handling
 
-* **serde** + **serde\_derive** for deserializing TOML/JSON
-* **toml** crate (or swap out for JSON)
-* Standard Rust libraries: `std::env`, `std::fs`, `std::path`
+SSP provides clear error messages for common issues:
 
----
+### Path Errors
+- **Non-existent path**: `Error: Path 'nonexistent' does not exist`
+- **Not a directory**: `Error: 'file.txt' is not a directory`
 
-## ✅ Summary
+### Argument Errors
+- **Missing argument**: `Error: --ignore flag requires an argument`
+- **Invalid depth**: `Error: --depth flag requires a numeric value`
+- **Unknown flag**: `Unknown flag: --invalid`
 
-`ssp` is a flexible, mode‑driven tree viewer that you can tailor by editing a simple `ssp.toml`. Perfect for quickly inspecting nested folder structures with your preferred ASCII style.
+### File Access Errors
+- **Permission denied**: Appropriate system error messages
+- **Read errors**: `Failed to read directory` with details
 
+## Performance Considerations
 
-## 🛠 Future Improvements
+- SSP reads directory entries only when needed for display
+- Large directories with many files may take longer to process
+- Line counting for the `--lines` option requires reading entire files
 
-* Add CLI options for showing hidden files.
-* Support for file type icons (UTF-8 based).
-* Output to file (e.g., Markdown tree structure).
-* Recode on other operating systems
+## Limitations
 
-## Installing the ssp into to **system path in Linux**
-```bash
-git clone https://github.com/Flaykky/show-struct-of-folder
-cd show-struct-of-folder
-rustc ssp.rs -o ssp
-sudo mv ssp /usr/local/bin/ssp
-```
+- Does not follow symbolic links to avoid infinite loops
+- Unicode tree characters may not display properly in all terminals
+- Line counting is based on newline characters and may not match IDE counts exactly
 
-## Requirments
+## Contributing
 
-* Rust compiler (rustc)
-* Unix-like operating system
+To contribute to SSP:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Version History
+
+### v1.0.0
+- Initial release
+- Basic directory structure display
+- Support for filtering options
+- Line counting functionality
+- Depth limiting
+- Cross-platform support
+
+## Troubleshooting
+
+### Common Issues
+
+**Tree characters not displaying correctly:**
+- Ensure your terminal supports Unicode
+- Check your locale settings
+
+**Performance issues with large directories:**
+- Use `--depth` to limit traversal
+- Use `--ignore` to skip large dependency folders
+
+**Permission errors:**
+- Run with appropriate permissions
+- Use `--ignore` to skip inaccessible directories
+
+### Getting Help
+
+For additional help, use the `--help` flag or check this documentation. For bug reports, please open an issue on the project repository.
 
 ## License
 
