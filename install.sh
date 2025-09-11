@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e  # Останавливать выполнение при ошибке
+set -e  # stop during error
 
 echo "Building the project..."
 cargo build --release
@@ -17,10 +17,9 @@ INSTALL_DIR="/usr/local/bin"
 
 echo "Installing $BINARY_NAME to $INSTALL_DIR..."
 
-# Копируем бинарь с правами root (требуется sudo)
+# copying binary with root
 sudo cp "$TARGET_DIR/$BINARY_NAME" "$INSTALL_DIR/"
 
-# Делаем его исполняемым
 sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
 echo "Installation complete! You can now use 'ssp' from anywhere."
