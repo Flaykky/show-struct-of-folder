@@ -17,8 +17,8 @@ A command-line tool for displaying directory structures with various filtering a
 To install SSP, you need to have Rust installed on your system. Clone the repository and build the project:
 
 ```bash
-git clone <repository-url>
-cd ssp
+git clone (https://github.com/Flaykky/show-struct-of-folder)
+cd show-struct-of-folder
 cargo build --release
 ```
 
