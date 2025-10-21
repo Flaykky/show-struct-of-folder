@@ -223,6 +223,14 @@ To contribute to SSP:
 
 For additional help, use the `--help` flag or check this documentation. For bug reports, please open an issue on the project repository.
 
+
+## todo
+
+- adding utility to apt/dnf/pacman package managers
+- saving to file
+- code analyzing utilities
+
+
 ## License
 
 Distributed under the MIT License. See [LICENSE](LICENSE) file for details.
