@@ -530,3 +530,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 If you find this tool useful, please ⭐ star the repository!
 
 </div>
+
+
+## license 
+
+Distributed under the MIT License. See [LICENSE](LICENSE) file for details.
+
+
