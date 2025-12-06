@@ -525,7 +525,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Made with 🦀 Rust**
+**Made with Rust**
 
 If you find this tool useful, please ⭐ star the repository!
 
