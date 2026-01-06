@@ -505,9 +505,6 @@ Contributions are welcome! Please follow these steps:
 - Use `-i` to ignore large folders (node_modules, target)
 - Use `-e` to filter by extension
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 👏 Acknowledgments
 
