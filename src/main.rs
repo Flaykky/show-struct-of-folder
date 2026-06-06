@@ -1,524 +1,281 @@
-use std::collections::{HashMap, HashSet};
-use std::env;
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process;
+mod analyze;
+mod cli;
+mod config;
+mod git;
+mod icons;
+mod output;
+mod render;
+mod style;
+mod tree;
+mod walk;
 
-#[derive(Debug)]
-struct Config {
-    target_dir: PathBuf,
-    ignore_folders: HashSet<String>,
-    only_folders: bool,
-    show_lines: bool,
-    only_extension: Option<String>,
-    max_depth: Option<usize>,
-    output_file: Option<String>,
-    show_code: bool,
-    analyze_code: bool,
-}
+use std::collections::HashSet;
+use std::io::Write as _;
+use std::path::PathBuf;
 
-impl Config {
-    fn new() -> Self {
-        Self {
-            target_dir: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            ignore_folders: HashSet::new(),
-            only_folders: false,
-            show_lines: false,
-            only_extension: None,
-            max_depth: None,
-            output_file: None,
-            show_code: false,
-            analyze_code: false,
+use clap::Parser;
+
+use cli::{Args, ColorWhen, IconWhen, OutputFormat, SortKey};
+use config::{ConfigFile, Theme};
+use output::{Summary, to_flat_list, to_json, to_markdown};
+use render::{RenderContext, RenderOptions, render_tree};
+use style::{Palette, StyleConfig};
+use walk::{WalkOptions, build_tree};
+
+// Windows: enable virtual terminal processing so ANSI codes work on older consoles.
+#[cfg(windows)]
+fn enable_ansi_windows() {
+    use std::os::windows::io::AsRawHandle;
+    extern "system" {
+        fn GetConsoleMode(handle: *mut std::ffi::c_void, mode: *mut u32) -> i32;
+        fn SetConsoleMode(handle: *mut std::ffi::c_void, mode: u32) -> i32;
+    }
+    const ENABLE_VIRTUAL_TERMINAL_PROCESSING: u32 = 0x0004;
+    unsafe {
+        let handle = std::io::stdout().as_raw_handle();
+        let mut mode: u32 = 0;
+        if GetConsoleMode(handle as _, &mut mode) != 0 {
+            SetConsoleMode(handle as _, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
         }
     }
-}
-
-#[derive(Debug, Default)]
-struct CodeStats {
-    total_lines: usize,
-    total_files: usize,
-    files_by_extension: HashMap<String, usize>,
-    lines_by_extension: HashMap<String, usize>,
-    int_count: usize,
-    float_count: usize,
-    string_count: usize,
-    bool_count: usize,
-    function_count: usize,
-    class_count: usize,
-    comment_lines: usize,
-    blank_lines: usize,
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut config = Config::new();
+    #[cfg(windows)]
+    enable_ansi_windows();
 
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--ignore" | "-i" => {
-                if i + 1 < args.len() {
-                    config.ignore_folders.insert(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    eprintln!("Error: --ignore requires an argument");
-                    process::exit(1);
-                }
-            }
-            "--only-folders" | "-of" => {
-                config.only_folders = true;
-                i += 1;
-            }
-            "--lines" | "-l" => {
-                config.show_lines = true;
-                i += 1;
-            }
-            "--extension" | "-e" => {
-                if i + 1 < args.len() {
-                    config.only_extension = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    eprintln!("Error: --extension requires an argument");
-                    process::exit(1);
-                }
-            }
-            "--depth" | "-d" => {
-                if i + 1 < args.len() {
-                    match args[i + 1].parse::<usize>() {
-                        Ok(depth) => {
-                            config.max_depth = Some(depth);
-                            i += 2;
-                        }
-                        Err(_) => {
-                            eprintln!("Error: --depth requires a numeric value");
-                            process::exit(1);
-                        }
-                    }
-                } else {
-                    eprintln!("Error: --depth requires an argument");
-                    process::exit(1);
-                }
-            }
-            "--output" | "-o" => {
-                if i + 1 < args.len() {
-                    config.output_file = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    eprintln!("Error: --output requires an argument");
-                    process::exit(1);
-                }
-            }
-            "--show-code" | "-sc" => {
-                config.show_code = true;
-                i += 1;
-            }
-            "--analyze" | "-a" => {
-                config.analyze_code = true;
-                i += 1;
-            }
-            "--help" | "-h" => {
-                print_help();
-                return;
-            }
-            arg if !arg.starts_with('-') => {
-                let path = Path::new(arg);
-                if !path.exists() {
-                    eprintln!("Error: Path '{}' does not exist", arg);
-                    process::exit(1);
-                }
-                if !path.is_dir() {
-                    eprintln!("Error: '{}' is not a directory", arg);
-                    process::exit(1);
-                }
-                config.target_dir = path.to_path_buf();
-                i += 1;
-            }
-            _ => {
-                eprintln!("Unknown flag: {}", args[i]);
-                print_help();
-                process::exit(1);
-            }
-        }
-    }
+    let args = Args::parse();
 
-    // Add default ignored folders (insert is a no-op if already present)
-    for ignore in [".git", "node_modules", "__pycache__", "target", ".idea", ".vscode"] {
-        config.ignore_folders.insert(ignore.to_string());
-    }
-
-    let mut output = String::new();
-    let mut code_files: Vec<(PathBuf, String)> = Vec::new();
-    let mut stats = CodeStats::default();
-
-    display_structure(&config, &mut output, &mut code_files, &mut stats);
-
-    if config.show_code && !code_files.is_empty() {
-        output.push_str("\n\n=== CODE CONTENT ===\n\n");
-        for (idx, (path, content)) in code_files.iter().enumerate() {
-            let relative_path = path
-                .strip_prefix(&config.target_dir)
-                .unwrap_or(path)
-                .to_str()
-                .unwrap_or("");
-            output.push_str(&format!("{}. {}:\n\n", idx + 1, relative_path));
-            output.push_str(content);
-            output.push_str("\n\n");
-            output.push_str(&"-".repeat(80));
-            output.push_str("\n\n");
-        }
-    }
-
-    if config.analyze_code {
-        output.push_str("\n\n=== CODE ANALYSIS ===\n\n");
-        output.push_str(&format_analysis(&stats));
-    }
-
-    if let Some(filename) = &config.output_file {
-        match fs::File::create(filename) {
-            Ok(mut file) => {
-                if let Err(e) = file.write_all(output.as_bytes()) {
-                    eprintln!("Error writing to file '{}': {}", filename, e);
-                    process::exit(1);
-                }
-                println!("Output saved to: {}", filename);
+    // ── --generate-config ────────────────────────────────────────────────────
+    if args.generate_config {
+        match ConfigFile::generate_default() {
+            Ok(path) => {
+                println!("Default config written to: {}", path.display());
             }
             Err(e) => {
-                eprintln!("Error creating file '{}': {}", filename, e);
-                process::exit(1);
+                eprintln!("ssp: {}", e);
+                std::process::exit(1);
             }
         }
-    } else {
-        print!("{}", output);
-    }
-}
-
-fn print_help() {
-    println!("SSP - Show Structure of Project v2.0");
-    println!();
-    println!("Usage: ssp [options] [directory_path]");
-    println!();
-    println!("Options:");
-    println!("  -i, --ignore FOLDER     Ignore the specified folder");
-    println!("  -of, --only-folders     Show only folders");
-    println!("  -l, --lines             Show the number of lines in files");
-    println!("  -e, --extension EXT     Show only files with the specified extension");
-    println!("  -d, --depth DEPTH       Limit the display depth");
-    println!("  -o, --output FILE       Save output to file");
-    println!("  -sc, --show-code        Show code content from all files");
-    println!("  -a, --analyze           Analyze code and show statistics");
-    println!("  -h, --help              Show this help message");
-    println!();
-    println!("Examples:");
-    println!("  ssp                     Display the structure of the current directory");
-    println!("  ssp /path/to/dir        Display the structure of the specified directory");
-    println!("  ssp -i target -of       Only folders, ignore 'target'");
-    println!("  ssp -l -e rs            .rs files with line counts");
-    println!("  ssp -d 2                Show structure up to 2 levels deep");
-    println!("  ssp -o output.txt       Save structure to file");
-    println!("  ssp -sc                 Show all code content");
-    println!("  ssp -a                  Analyze code statistics");
-    println!("  ssp -sc -a -o full.txt  Full output with code and analysis to file");
-}
-
-fn display_structure(
-    config: &Config,
-    output: &mut String,
-    code_files: &mut Vec<(PathBuf, String)>,
-    stats: &mut CodeStats,
-) {
-    let root_name = config
-        .target_dir
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or(".");
-
-    output.push_str(&format!("{}/\n", root_name));
-
-    let mut entries = match read_dir_entries(&config.target_dir) {
-        Some(e) => e,
-        None => {
-            eprintln!(
-                "Error: Cannot read directory '{}'",
-                config.target_dir.display()
-            );
-            return;
-        }
-    };
-
-    filter_and_sort_entries(&mut entries, config);
-
-    for (i, entry) in entries.iter().enumerate() {
-        let is_last = i == entries.len() - 1;
-        let path = entry.path();
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            print_dir_structure(&path, "", is_last, 0, config, output, code_files, stats);
-        } else {
-            print_file_structure(&path, "", is_last, config, output, code_files, stats);
-        }
-    }
-}
-
-/// Reads directory entries, returning None on error instead of panicking.
-fn read_dir_entries(path: &Path) -> Option<Vec<std::fs::DirEntry>> {
-    let iter = fs::read_dir(path).ok()?;
-    Some(iter.filter_map(|res| res.ok()).collect())
-}
-
-fn filter_and_sort_entries(entries: &mut Vec<std::fs::DirEntry>, config: &Config) {
-    entries.retain(|entry| {
-        // Use cached file_type() instead of calling path().is_dir() (avoids syscall)
-        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        if is_dir {
-            let name = entry.file_name();
-            let name_str = name.to_str().unwrap_or("");
-            !config.ignore_folders.contains(name_str)
-        } else {
-            if config.only_folders {
-                return false;
-            }
-            if let Some(ref ext) = config.only_extension {
-                entry
-                    .path()
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|e| e == ext)
-            } else {
-                true
-            }
-        }
-    });
-
-    entries.sort_by(|a, b| {
-        let a_is_dir = a.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let b_is_dir = b.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        match (a_is_dir, b_is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.file_name().cmp(&b.file_name()),
-        }
-    });
-}
-
-#[allow(clippy::too_many_arguments)]
-fn print_dir_structure(
-    path: &Path,
-    prefix: &str,
-    is_last: bool,
-    current_depth: usize,
-    config: &Config,
-    output: &mut String,
-    code_files: &mut Vec<(PathBuf, String)>,
-    stats: &mut CodeStats,
-) {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("<invalid>");
-    let connector = if is_last { "└──" } else { "├──" };
-    let new_prefix_segment = if is_last { "    " } else { "│   " };
-
-    output.push_str(&format!("{}{} {}\n", prefix, connector, name));
-
-    if config.max_depth.is_some_and(|max| current_depth >= max) {
         return;
     }
 
-    let new_prefix = format!("{}{}", prefix, new_prefix_segment);
+    // ── Load config file ─────────────────────────────────────────────────────
+    let config_file: Option<ConfigFile> = if args.no_config {
+        None
+    } else {
+        ConfigFile::load(args.config.as_deref())
+    };
 
-    let mut entries = match read_dir_entries(path) {
-        Some(e) => e,
-        None => {
-            eprintln!("Warning: Cannot read directory '{}'", path.display());
-            return;
+    let cfg_defaults = config_file
+        .as_ref()
+        .map(|c| &c.defaults)
+        .map(|d| d.clone())
+        .unwrap_or_default();
+
+    // ── Resolve active theme ──────────────────────────────────────────────────
+    let theme_name = args
+        .theme
+        .as_deref()
+        .unwrap_or(&cfg_defaults.theme)
+        .to_string();
+
+    let theme: Theme = config_file
+        .as_ref()
+        .map(|c| c.resolve_theme(&theme_name))
+        .unwrap_or_default();
+
+    // ── Style config (color / icons / ascii) ─────────────────────────────────
+    let color_when = if args.no_config {
+        args.color
+    } else {
+        // Config default can be overridden by CLI
+        match cfg_defaults.color.as_str() {
+            "always" if args.color == ColorWhen::Auto => ColorWhen::Always,
+            "never"  if args.color == ColorWhen::Auto => ColorWhen::Never,
+            _ => args.color,
         }
     };
 
-    filter_and_sort_entries(&mut entries, config);
+    let icon_when = if args.no_icons {
+        IconWhen::Never
+    } else {
+        args.icons
+    };
 
-    for (i, entry) in entries.iter().enumerate() {
-        let is_last_entry = i == entries.len() - 1;
-        let entry_path = entry.path();
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            print_dir_structure(
-                &entry_path,
-                &new_prefix,
-                is_last_entry,
-                current_depth + 1,
-                config,
-                output,
-                code_files,
-                stats,
-            );
-        } else {
-            print_file_structure(
-                &entry_path,
-                &new_prefix,
-                is_last_entry,
-                config,
-                output,
-                code_files,
-                stats,
-            );
+    let style_cfg = StyleConfig::resolve(color_when, icon_when, args.no_icons, args.ascii);
+    let palette = Palette::from_theme(&theme, style_cfg.use_color);
+
+    // ── Target directory ─────────────────────────────────────────────────────
+    let target_dir: PathBuf = args
+        .directory
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    if !target_dir.exists() {
+        eprintln!("ssp: '{}' does not exist", target_dir.display());
+        std::process::exit(1);
+    }
+    if !target_dir.is_dir() {
+        eprintln!("ssp: '{}' is not a directory", target_dir.display());
+        std::process::exit(1);
+    }
+
+    // ── Ignore set ────────────────────────────────────────────────────────────
+    let mut ignore_names: HashSet<String> = HashSet::new();
+    // Default ignores from config
+    for name in &cfg_defaults.ignore {
+        ignore_names.insert(name.clone());
+    }
+    // If no config loaded, use hardcoded defaults
+    if config_file.is_none() {
+        for name in [".git", "node_modules", "target", "__pycache__", ".idea", ".vscode"] {
+            ignore_names.insert(name.to_string());
         }
     }
-}
+    // CLI --ignore flags
+    for name in &args.ignore_names {
+        ignore_names.insert(name.clone());
+    }
+    let dirs_only = args.dirs_only;
+    // Back-compat -sc
+    let show_code = args.show_code || args.sc_compat;
 
-fn print_file_structure(
-    path: &Path,
-    prefix: &str,
-    is_last: bool,
-    config: &Config,
-    output: &mut String,
-    code_files: &mut Vec<(PathBuf, String)>,
-    stats: &mut CodeStats,
-) {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("<invalid>");
-    let connector = if is_last { "└──" } else { "├──" };
+    // ── Sort key ─────────────────────────────────────────────────────────────
+    let sort_key = args.sort.unwrap_or_else(|| {
+        match cfg_defaults.sort.as_str() {
+            "size" => SortKey::Size,
+            "time" => SortKey::Time,
+            "ext"  => SortKey::Ext,
+            "none" => SortKey::None,
+            _      => SortKey::Name,
+        }
+    });
 
-    // Read file content once for all purposes that need it
-    let needs_content = config.show_lines || config.show_code || config.analyze_code;
-    let content = if needs_content {
-        fs::read_to_string(path).ok()
+    // ── Git status ────────────────────────────────────────────────────────────
+    let git_status = if args.git {
+        git::collect_status(&target_dir)
     } else {
         None
     };
 
-    if config.show_lines {
-        let line_count = content.as_deref().map_or(0, |c| c.lines().count());
-        output.push_str(&format!("{}{} {} ({})\n", prefix, connector, name, line_count));
+    // ── Build tree ────────────────────────────────────────────────────────────
+    let walk_opts = WalkOptions {
+        max_depth: args.depth,
+        show_hidden: args.show_hidden || cfg_defaults.show_hidden,
+        respect_gitignore: !args.no_gitignore,
+        ignore_names: &ignore_names,
+        include_globs: &args.include_globs,
+        exclude_globs: &args.exclude_globs,
+        extension_filter: args.extension.as_deref(),
+        dirs_only,
+        files_only: args.files_only,
+        prune: args.prune,
+        sort: sort_key,
+        reverse: args.reverse,
+        dirs_first: args.dirs_first && !args.no_dirs_first,
+        git_status: git_status.as_ref(),
+    };
+
+    let root_node = build_tree(&target_dir, &walk_opts);
+
+    // ── Format output ─────────────────────────────────────────────────────────
+    let mut final_output = String::new();
+
+    match args.format {
+        OutputFormat::Json => {
+            let val = to_json(&root_node, args.sizes);
+            match serde_json::to_string_pretty(&val) {
+                Ok(s) => final_output.push_str(&s),
+                Err(e) => {
+                    eprintln!("ssp: JSON serialization error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            final_output.push('\n');
+        }
+        OutputFormat::Markdown => {
+            final_output.push_str(&to_markdown(&root_node, 0));
+        }
+        OutputFormat::List => {
+            let paths = to_flat_list(&root_node, &target_dir);
+            for p in paths {
+                final_output.push_str(&p);
+                final_output.push('\n');
+            }
+        }
+        OutputFormat::Tree => {
+            let render_opts = RenderOptions {
+                show_lines: args.show_lines,
+                show_sizes: args.sizes,
+                show_git: args.git,
+                show_code,
+                analyze: args.analyze,
+                full_path: args.full_path,
+                root_dir: target_dir.clone(),
+            };
+            let render_ctx = RenderContext {
+                style: &style_cfg,
+                palette: &palette,
+                opts: &render_opts,
+            };
+
+            let mut stats = analyze::CodeStats::default();
+            let mut code_files: Vec<(std::path::PathBuf, String)> = Vec::new();
+
+            let tree_str = render_tree(&root_node, &render_ctx, &mut stats, &mut code_files);
+            final_output.push_str(&tree_str);
+
+            // Summary
+            if args.summary {
+                let summary = Summary::from_node(&root_node);
+                final_output.push_str(&summary.format());
+                final_output.push('\n');
+            }
+
+            // Code content section
+            if show_code && !code_files.is_empty() {
+                final_output.push_str("\n\n=== CODE CONTENT ===\n\n");
+                for (idx, (path, content)) in code_files.iter().enumerate() {
+                    let rel = path
+                        .strip_prefix(&target_dir)
+                        .unwrap_or(path)
+                        .to_string_lossy();
+                    final_output.push_str(&format!("{}. {}:\n\n", idx + 1, rel));
+                    final_output.push_str(content);
+                    final_output.push_str("\n\n");
+                    final_output.push_str(&"-".repeat(80));
+                    final_output.push_str("\n\n");
+                }
+            }
+
+            // Analysis section (render_tree already collected stats when analyze=true)
+            if args.analyze {
+                final_output.push_str("\n\n=== CODE ANALYSIS ===\n\n");
+                final_output.push_str(&analyze::format_analysis(&stats));
+            }
+        }
+    }
+
+    // ── Write output ──────────────────────────────────────────────────────────
+    if let Some(filename) = &args.output_file {
+        match std::fs::File::create(filename) {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(final_output.as_bytes()) {
+                    eprintln!("ssp: error writing to '{}': {}", filename, e);
+                    std::process::exit(1);
+                }
+                // Print confirmation to stderr so it doesn't pollute the file content
+                eprintln!("Output saved to: {}", filename);
+            }
+            Err(e) => {
+                eprintln!("ssp: cannot create '{}': {}", filename, e);
+                std::process::exit(1);
+            }
+        }
     } else {
-        output.push_str(&format!("{}{} {}\n", prefix, connector, name));
-    }
-
-    if let Some(text) = content {
-        if config.analyze_code {
-            analyze_file(path, &text, stats);
-        }
-        if config.show_code {
-            code_files.push((path.to_path_buf(), text));
-        }
+        print!("{}", final_output);
     }
 }
 
-fn analyze_file(path: &Path, content: &str, stats: &mut CodeStats) {
-    stats.total_files += 1;
-
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    *stats.files_by_extension.entry(ext.clone()).or_insert(0) += 1;
-
-    let mut line_count = 0;
-    for line in content.lines() {
-        line_count += 1;
-        let trimmed = line.trim();
-
-        if trimmed.is_empty() {
-            stats.blank_lines += 1;
-            continue;
-        }
-
-        if trimmed.starts_with("//")
-            || trimmed.starts_with('#')
-            || trimmed.starts_with("/*")
-            || trimmed.starts_with('*')
-        {
-            stats.comment_lines += 1;
-        }
-
-        if trimmed.contains("int ")
-            || trimmed.contains(": i32")
-            || trimmed.contains(": i64")
-            || trimmed.contains(": usize")
-        {
-            stats.int_count += 1;
-        }
-        if trimmed.contains("float ")
-            || trimmed.contains("double ")
-            || trimmed.contains(": f32")
-            || trimmed.contains(": f64")
-        {
-            stats.float_count += 1;
-        }
-        if trimmed.contains("String")
-            || trimmed.contains("str")
-            || trimmed.contains("string")
-            || trimmed.contains("&str")
-        {
-            stats.string_count += 1;
-        }
-        if trimmed.contains("bool") || trimmed.contains("boolean") {
-            stats.bool_count += 1;
-        }
-
-        if trimmed.starts_with("fn ")
-            || trimmed.starts_with("def ")
-            || trimmed.starts_with("function ")
-            || trimmed.contains("func ")
-            || (trimmed.contains('(') && trimmed.contains(')') && trimmed.contains('{'))
-        {
-            stats.function_count += 1;
-        }
-
-        if trimmed.starts_with("class ")
-            || trimmed.starts_with("struct ")
-            || trimmed.starts_with("impl ")
-            || trimmed.starts_with("trait ")
-        {
-            stats.class_count += 1;
-        }
-    }
-
-    stats.total_lines += line_count;
-    *stats.lines_by_extension.entry(ext).or_insert(0) += line_count;
-}
-
-fn format_analysis(stats: &CodeStats) -> String {
-    let mut result = String::new();
-
-    let code_lines = stats
-        .total_lines
-        .saturating_sub(stats.blank_lines + stats.comment_lines);
-
-    result.push_str(&format!("Total Files: {}\n", stats.total_files));
-    result.push_str(&format!("Total Lines: {}\n", stats.total_lines));
-    result.push_str(&format!("Blank Lines: {}\n", stats.blank_lines));
-    result.push_str(&format!("Comment Lines: {}\n", stats.comment_lines));
-    result.push_str(&format!("Code Lines: {}\n\n", code_lines));
-
-    result.push_str("Files by Extension:\n");
-    let mut ext_vec: Vec<_> = stats.files_by_extension.iter().collect();
-    ext_vec.sort_by(|a, b| b.1.cmp(a.1));
-    for (ext, count) in ext_vec {
-        result.push_str(&format!("  .{}: {} files\n", ext, count));
-    }
-
-    result.push_str("\nLines by Extension:\n");
-    let mut lines_vec: Vec<_> = stats.lines_by_extension.iter().collect();
-    lines_vec.sort_by(|a, b| b.1.cmp(a.1));
-    for (ext, count) in lines_vec {
-        result.push_str(&format!("  .{}: {} lines\n", ext, count));
-    }
-
-    result.push_str("\nCode Elements (approximate):\n");
-    result.push_str(&format!("  Functions: {}\n", stats.function_count));
-    result.push_str(&format!("  Classes/Structs: {}\n", stats.class_count));
-    result.push_str(&format!("  Int declarations: {}\n", stats.int_count));
-    result.push_str(&format!("  Float declarations: {}\n", stats.float_count));
-    result.push_str(&format!("  String declarations: {}\n", stats.string_count));
-    result.push_str(&format!("  Bool declarations: {}\n", stats.bool_count));
-
-    if stats.total_lines > 0 {
-        let code_percentage = (code_lines as f64 / stats.total_lines as f64) * 100.0;
-        result.push_str(&format!("\nCode Density: {:.1}%\n", code_percentage));
-    }
-
-    result
-}
