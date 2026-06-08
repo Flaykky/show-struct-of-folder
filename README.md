@@ -4,7 +4,7 @@
 
 ![Version](https://img.shields.io/badge/version-2.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Rust](https://img.shields.io/badge/rust-1.70+-orange)
+![Rust](https://img.shields.io/badge/rust-1.85+-orange)
 
 A modern, configurable alternative to `tree` — with colors, icons, git integration,
 multiple output formats, and flexible filtering.
@@ -29,7 +29,7 @@ multiple output formats, and flexible filtering.
 
 ### Prerequisites
 
-- Rust 1.70+  (`rustup.rs`)
+- Rust 1.85+ (`rustup.rs`)
 
 ### From Source
 
@@ -109,7 +109,7 @@ If no directory is given, the current working directory is used.
 |------|-------------|
 | `-s, --sort <name\|size\|time\|ext\|none>` | Sort key (default: `name`) |
 | `-r, --reverse` | Reverse sort order |
-| `--dirs-first` | List directories before files (default: on) |
+| `--dirs-first` | List directories before files |
 | `--no-dirs-first` | Mix directories and files in sort order |
 
 ### Git
@@ -174,6 +174,7 @@ color      = "auto"       # auto | always | never
 sort       = "name"       # name | size | time | ext | none
 dirs_first = true
 show_hidden = false
+depth      = 5            # optional; remove or comment out for unlimited depth
 ignore     = [".git", "node_modules", "target"]
 theme      = "default"
 
@@ -305,8 +306,12 @@ Override via `-i <name>` (add extra) or set `ignore = [...]` in `config.toml` (r
 cargo build              # debug
 cargo build --release    # release (target/release/ssp)
 cargo test               # run tests
-cargo clippy             # lint
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
 ```
+
+The repository includes `rust-toolchain.toml`, so rustup-based environments install
+the expected `rustfmt` and `clippy` components automatically.
 
 ## 📝 Roadmap
 
@@ -338,7 +343,8 @@ to disable it.
 3. Commit your changes
 4. Open a Pull Request
 
-Please follow Rust naming conventions and run `cargo clippy` before submitting.
+Please follow Rust naming conventions and run the commands in the Building section
+before submitting.
 
 ## 📧 Contact
 

@@ -3,7 +3,7 @@
 # SSP Installation Script for Linux/macOS
 # This script builds and installs SSP to your system
 
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -12,8 +12,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Installation directory
-INSTALL_DIR="$HOME/.local/bin"
+# Installation directory. Override with: INSTALL_DIR=/usr/local/bin ./install.sh
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║  SSP - Show Structure of Project     ║${NC}"
@@ -34,15 +34,16 @@ echo -e "${GREEN}✓${NC} Rust/Cargo found"
 RUST_VERSION=$(rustc --version | cut -d' ' -f2)
 echo -e "${GREEN}✓${NC} Rust version: $RUST_VERSION"
 
+if [ ! -f "Cargo.toml" ]; then
+    echo -e "${RED}Error: Cargo.toml not found!${NC}"
+    echo -e "${YELLOW}Run this script from the project root directory.${NC}"
+    exit 1
+fi
+
 # Build the project
 echo
 echo -e "${BLUE}Building SSP in release mode...${NC}"
 cargo build --release
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Error: Build failed!${NC}"
-    exit 1
-fi
 
 echo -e "${GREEN}✓${NC} Build successful"
 
@@ -54,8 +55,7 @@ fi
 
 # Copy binary
 echo -e "${BLUE}Installing SSP to $INSTALL_DIR...${NC}"
-cp target/release/ssp "$INSTALL_DIR/ssp"
-chmod +x "$INSTALL_DIR/ssp"
+install -m 0755 target/release/ssp "$INSTALL_DIR/ssp"
 
 echo -e "${GREEN}✓${NC} Binary installed"
 
@@ -85,11 +85,15 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         if [ -n "$BASH_VERSION" ]; then
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+            if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+            fi
             echo -e "${GREEN}✓${NC} Added to ~/.bashrc"
             echo -e "${YELLOW}Run: source ~/.bashrc${NC}"
         elif [ -n "$ZSH_VERSION" ]; then
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+            if ! grep -Fq 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zshrc" 2>/dev/null; then
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+            fi
             echo -e "${GREEN}✓${NC} Added to ~/.zshrc"
             echo -e "${YELLOW}Run: source ~/.zshrc${NC}"
         fi
@@ -119,7 +123,7 @@ echo
 echo -e "Quick start:"
 echo -e "  ${BLUE}ssp${NC}              - Show current directory structure"
 echo -e "  ${BLUE}ssp -l${NC}           - Show with line counts"
-echo -e "  ${BLUE}ssp -a${NC}           - Analyze code"
+echo -e "  ${BLUE}ssp -A${NC}           - Analyze code"
 echo -e "  ${BLUE}ssp --help${NC}       - Show all options"
 echo
 echo -e "For full documentation, visit:"

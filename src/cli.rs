@@ -114,11 +114,12 @@ pub struct Args {
     #[arg(short = 'r', long)]
     pub reverse: bool,
 
-    /// List directories before files (default: true)
-    #[arg(long, default_value_t = true, overrides_with = "no_dirs_first")]
+    /// List directories before files
+    #[arg(long, overrides_with = "no_dirs_first")]
     pub dirs_first: bool,
 
-    #[arg(long, hide = true)]
+    /// Mix directories and files in the selected sort order
+    #[arg(long)]
     pub no_dirs_first: bool,
 
     // ── Git ───────────────────────────────────────────────────────────────────
@@ -152,8 +153,7 @@ pub struct Args {
     #[arg(long = "analyze", short = 'A')]
     pub analyze: bool,
 
-    /// Hidden alias kept for back-compat (-a in old version)
-    // NOTE: -a is now taken by --all; old -a users should use -A
+    // NOTE: -a is now taken by --all; old -a users should use -A.
     // We keep --analyze as the canonical flag; there is no silent override.
 
     // ── Output ────────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use cli::{Args, ColorWhen, IconWhen, OutputFormat, SortKey};
-use config::{ConfigFile, Theme};
+use config::{ConfigDefaults, ConfigFile, Theme};
 use output::{Summary, to_flat_list, to_json, to_markdown};
 use render::{RenderContext, RenderOptions, render_tree};
 use style::{Palette, StyleConfig};
@@ -86,22 +86,8 @@ fn main() {
         .unwrap_or_default();
 
     // ── Style config (color / icons / ascii) ─────────────────────────────────
-    let color_when = if args.no_config {
-        args.color
-    } else {
-        // Config default can be overridden by CLI
-        match cfg_defaults.color.as_str() {
-            "always" if args.color == ColorWhen::Auto => ColorWhen::Always,
-            "never"  if args.color == ColorWhen::Auto => ColorWhen::Never,
-            _ => args.color,
-        }
-    };
-
-    let icon_when = if args.no_icons {
-        IconWhen::Never
-    } else {
-        args.icons
-    };
+    let color_when = resolve_color(args.color, &cfg_defaults, args.no_config);
+    let icon_when = resolve_icons(args.icons, args.no_icons, &cfg_defaults, args.no_config);
 
     let style_cfg = StyleConfig::resolve(color_when, icon_when, args.no_icons, args.ascii);
     let palette = Palette::from_theme(&theme, style_cfg.use_color);
@@ -143,15 +129,7 @@ fn main() {
     let show_code = args.show_code || args.sc_compat;
 
     // ── Sort key ─────────────────────────────────────────────────────────────
-    let sort_key = args.sort.unwrap_or_else(|| {
-        match cfg_defaults.sort.as_str() {
-            "size" => SortKey::Size,
-            "time" => SortKey::Time,
-            "ext"  => SortKey::Ext,
-            "none" => SortKey::None,
-            _      => SortKey::Name,
-        }
-    });
+    let sort_key = resolve_sort(args.sort, &cfg_defaults);
 
     // ── Git status ────────────────────────────────────────────────────────────
     let git_status = if args.git {
@@ -162,7 +140,8 @@ fn main() {
 
     // ── Build tree ────────────────────────────────────────────────────────────
     let walk_opts = WalkOptions {
-        max_depth: args.depth,
+        root: &target_dir,
+        max_depth: args.depth.or(cfg_defaults.depth),
         show_hidden: args.show_hidden || cfg_defaults.show_hidden,
         respect_gitignore: !args.no_gitignore,
         ignore_names: &ignore_names,
@@ -174,7 +153,7 @@ fn main() {
         prune: args.prune,
         sort: sort_key,
         reverse: args.reverse,
-        dirs_first: args.dirs_first && !args.no_dirs_first,
+        dirs_first: resolve_dirs_first(args.dirs_first, args.no_dirs_first, &cfg_defaults),
         git_status: git_status.as_ref(),
     };
 
@@ -279,3 +258,93 @@ fn main() {
     }
 }
 
+fn resolve_color(cli_value: ColorWhen, defaults: &ConfigDefaults, no_config: bool) -> ColorWhen {
+    if no_config || cli_value != ColorWhen::Auto {
+        return cli_value;
+    }
+
+    match defaults.color.as_str() {
+        "always" => ColorWhen::Always,
+        "never" => ColorWhen::Never,
+        _ => ColorWhen::Auto,
+    }
+}
+
+fn resolve_icons(
+    cli_value: IconWhen,
+    no_icons: bool,
+    defaults: &ConfigDefaults,
+    no_config: bool,
+) -> IconWhen {
+    if no_icons {
+        return IconWhen::Never;
+    }
+    if no_config || cli_value != IconWhen::Auto {
+        return cli_value;
+    }
+    if defaults.icons {
+        IconWhen::Auto
+    } else {
+        IconWhen::Never
+    }
+}
+
+fn resolve_sort(cli_value: Option<SortKey>, defaults: &ConfigDefaults) -> SortKey {
+    cli_value.unwrap_or_else(|| match defaults.sort.as_str() {
+        "size" => SortKey::Size,
+        "time" => SortKey::Time,
+        "ext" => SortKey::Ext,
+        "none" => SortKey::None,
+        _ => SortKey::Name,
+    })
+}
+
+fn resolve_dirs_first(
+    cli_dirs_first: bool,
+    cli_no_dirs_first: bool,
+    defaults: &ConfigDefaults,
+) -> bool {
+    if cli_no_dirs_first {
+        return false;
+    }
+    if cli_dirs_first {
+        return true;
+    }
+    defaults.dirs_first
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_defaults_feed_runtime_options() {
+        let defaults = ConfigDefaults {
+            icons: false,
+            color: "never".into(),
+            sort: "size".into(),
+            dirs_first: false,
+            ..ConfigDefaults::default()
+        };
+
+        assert_eq!(resolve_color(ColorWhen::Auto, &defaults, false), ColorWhen::Never);
+        assert_eq!(resolve_icons(IconWhen::Auto, false, &defaults, false), IconWhen::Never);
+        assert_eq!(resolve_sort(None, &defaults), SortKey::Size);
+        assert!(!resolve_dirs_first(false, false, &defaults));
+        assert!(resolve_dirs_first(true, false, &defaults));
+    }
+
+    #[test]
+    fn cli_flags_override_config_defaults() {
+        let defaults = ConfigDefaults {
+            icons: false,
+            color: "never".into(),
+            dirs_first: true,
+            ..ConfigDefaults::default()
+        };
+
+        assert_eq!(resolve_color(ColorWhen::Always, &defaults, false), ColorWhen::Always);
+        assert_eq!(resolve_icons(IconWhen::Always, false, &defaults, false), IconWhen::Always);
+        assert!(!resolve_dirs_first(true, true, &defaults));
+    }
+}

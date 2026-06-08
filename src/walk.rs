@@ -2,7 +2,7 @@
 //! Builds an in-memory Node tree.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
 
@@ -12,6 +12,7 @@ use crate::tree::{Node, NodeKind};
 
 /// Parameters that govern what the walker includes/excludes and how it sorts.
 pub struct WalkOptions<'a> {
+    pub root: &'a Path,
     pub max_depth: Option<usize>,
     pub show_hidden: bool,
     pub respect_gitignore: bool,
@@ -94,118 +95,107 @@ fn build_node(path: &Path, opts: &WalkOptions, depth: usize) -> Node {
 }
 
 fn read_children(dir: &Path, opts: &WalkOptions, depth: usize) -> Vec<Node> {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return Vec::new(),
-    };
+    let entries = read_child_entries(dir, opts);
 
     let mut children: Vec<Node> = entries
-        .filter_map(|res| res.ok())
-        .filter(|entry| {
-            let name_os = entry.file_name();
-            let name = name_os.to_string_lossy();
-            let path = entry.path();
-
-            // Hidden files
-            if !opts.show_hidden && name.starts_with('.') {
-                return false;
-            }
-
-            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-
-            // Ignored names
-            if opts.ignore_names.contains(name.as_ref()) {
-                return false;
-            }
-
-            // Gitignore — delegate to ignore crate for files inside a walk
-            // (We handle this via WalkBuilder for the root; for children we do
-            //  a simple inline check using the ignore crate's matcher.)
-            // Actually we build per-entry below using ignore crate.
-
-            // dirs_only / files_only
-            if opts.dirs_only && !is_dir {
-                return false;
-            }
-            if opts.files_only && is_dir {
-                return false;
-            }
-
-            // Extension filter (files only)
-            if !is_dir {
-                if let Some(ext) = opts.extension_filter {
-                    let file_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    if file_ext != ext {
-                        return false;
-                    }
-                }
-            }
-
-            // Include globs (files only, skip dirs so we can recurse)
-            if !opts.include_globs.is_empty() && !is_dir {
-                let matched = opts.include_globs.iter().any(|pat| {
-                    glob_match(pat, name.as_ref())
-                });
-                if !matched {
-                    return false;
-                }
-            }
-
-            // Exclude globs
-            if !opts.exclude_globs.is_empty() {
-                let excluded = opts.exclude_globs.iter().any(|pat| {
-                    glob_match(pat, name.as_ref())
-                });
-                if excluded {
-                    return false;
-                }
-            }
-
-            true
-        })
-        .filter(|entry| {
-            // Gitignore via ignore crate's standalone matcher
-            if opts.respect_gitignore {
-                !is_gitignored(&entry.path())
-            } else {
-                true
-            }
-        })
-        .map(|entry| build_node(&entry.path(), opts, depth))
+        .into_iter()
+        .filter(|entry| should_include_entry(entry, opts))
+        .map(|entry| build_node(&entry.path, opts, depth))
         .collect();
 
     sort_children(&mut children, opts);
     children
 }
 
-/// Minimal gitignore check using the `ignore` crate's WalkBuilder on a single path.
-fn is_gitignored(path: &Path) -> bool {
-    // Build a one-shot walker; if it yields the path, it's not ignored.
-    // This is slightly heavy but correct and cross-platform.
-    // For large trees the git status map approach would be faster; good enough for now.
-    let parent = match path.parent() {
-        Some(p) => p,
-        None => return false,
-    };
-    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+#[derive(Debug)]
+struct ChildEntry {
+    path: PathBuf,
+    name: String,
+    is_dir: bool,
+}
 
-    // Use WalkBuilder to test this single entry.
-    let mut builder = WalkBuilder::new(parent);
-    builder
-        .max_depth(Some(1))
-        .hidden(false)
-        .ignore(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true);
+fn read_child_entries(dir: &Path, opts: &WalkOptions) -> Vec<ChildEntry> {
+    if opts.respect_gitignore {
+        let mut builder = WalkBuilder::new(dir);
+        builder
+            .max_depth(Some(1))
+            .hidden(false)
+            .ignore(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true);
 
-    for entry in builder.build().flatten() {
-        if entry.path() == path || entry.file_name() == std::ffi::OsStr::new(&name) {
-            // The walker yielded it → not ignored.
-            return false;
+        return builder
+            .build()
+            .filter_map(|res| res.ok())
+            .filter(|entry| entry.depth() == 1)
+            .filter_map(|entry| {
+                let path = entry.into_path();
+                entry_from_path(path)
+            })
+            .collect();
+    }
+
+    match std::fs::read_dir(dir) {
+        Ok(entries) => entries
+            .filter_map(|res| res.ok())
+            .filter_map(|entry| entry_from_path(entry.path()))
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn entry_from_path(path: PathBuf) -> Option<ChildEntry> {
+    let name = path.file_name()?.to_string_lossy().to_string();
+    let is_dir = std::fs::symlink_metadata(&path)
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
+    Some(ChildEntry { path, name, is_dir })
+}
+
+fn should_include_entry(entry: &ChildEntry, opts: &WalkOptions) -> bool {
+    if !opts.show_hidden && entry.name.starts_with('.') {
+        return false;
+    }
+
+    if opts.ignore_names.contains(entry.name.as_str()) {
+        return false;
+    }
+
+    if opts.dirs_only && !entry.is_dir {
+        return false;
+    }
+    if opts.files_only && entry.is_dir {
+        return false;
+    }
+
+    if !entry.is_dir {
+        if let Some(ext) = opts.extension_filter {
+            let file_ext = entry.path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if file_ext != ext.trim_start_matches('.') {
+                return false;
+            }
         }
     }
-    // Wasn't yielded → treated as ignored.
+
+    if !opts.include_globs.is_empty()
+        && !entry.is_dir
+        && !opts
+            .include_globs
+            .iter()
+            .any(|pat| glob_match_entry(pat, &entry.name, &entry.path, opts.root))
+    {
+        return false;
+    }
+
+    if opts
+        .exclude_globs
+        .iter()
+        .any(|pat| glob_match_entry(pat, &entry.name, &entry.path, opts.root))
+    {
+        return false;
+    }
+
     true
 }
 
@@ -258,6 +248,19 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     glob_match_inner(&pat, &txt)
 }
 
+fn glob_match_entry(pattern: &str, name: &str, path: &Path, root: &Path) -> bool {
+    if glob_match(pattern, name) {
+        return true;
+    }
+
+    let rel = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    glob_match(pattern, &rel)
+}
+
 fn glob_match_inner(pat: &[char], txt: &[char]) -> bool {
     match (pat.first(), txt.first()) {
         (None, None) => true,
@@ -280,7 +283,13 @@ fn glob_match_inner(pat: &[char], txt: &[char]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::glob_match;
+    use super::{build_tree, glob_match, WalkOptions};
+    use crate::cli::SortKey;
+    use crate::tree::NodeKind;
+    use std::collections::HashSet;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_glob() {
@@ -290,5 +299,126 @@ mod tests {
         assert!(glob_match("foo*", "foobar"));
         assert!(glob_match("f?o", "foo"));
         assert!(!glob_match("f?o", "fo"));
+    }
+
+    #[test]
+    fn respects_gitignore_without_hiding_dotfiles_when_all_is_set() {
+        let root = temp_root("ssp-gitignore");
+        fs::write(root.join(".gitignore"), "ignored.txt\n").unwrap();
+        fs::write(root.join(".env"), "SECRET=1\n").unwrap();
+        fs::write(root.join("ignored.txt"), "ignored\n").unwrap();
+        fs::write(root.join("kept.txt"), "kept\n").unwrap();
+
+        let ignore_names = HashSet::new();
+        let opts = test_opts(&root, true, true, &ignore_names, &[], &[]);
+        let tree = build_tree(&root, &opts);
+        let names = child_names(&tree);
+
+        assert!(names.contains(&".env".to_string()));
+        assert!(names.contains(&"kept.txt".to_string()));
+        assert!(!names.contains(&"ignored.txt".to_string()));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn applies_parent_gitignore_rules_to_nested_entries() {
+        let root = temp_root("ssp-parent-gitignore");
+        fs::create_dir(root.join("src")).unwrap();
+        fs::write(root.join(".gitignore"), "src/generated.rs\n").unwrap();
+        fs::write(root.join("src/generated.rs"), "ignored\n").unwrap();
+        fs::write(root.join("src/main.rs"), "fn main() {}\n").unwrap();
+
+        let ignore_names = HashSet::new();
+        let opts = test_opts(&root, true, true, &ignore_names, &[], &[]);
+        let tree = build_tree(&root, &opts);
+        let src = tree.children.iter().find(|node| node.name() == "src").unwrap();
+        let names = child_names(src);
+
+        assert_eq!(names, vec!["main.rs".to_string()]);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extension_filter_accepts_leading_dot() {
+        let root = temp_root("ssp-extension");
+        fs::write(root.join("main.rs"), "fn main() {}\n").unwrap();
+        fs::write(root.join("main.ts"), "console.log(1)\n").unwrap();
+
+        let ignore_names = HashSet::new();
+        let mut opts = test_opts(&root, false, false, &ignore_names, &[], &[]);
+        opts.extension_filter = Some(".rs");
+
+        let tree = build_tree(&root, &opts);
+        let names = child_names(&tree);
+
+        assert_eq!(names, vec!["main.rs".to_string()]);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn exclude_globs_match_relative_paths() {
+        let root = temp_root("ssp-relative-glob");
+        fs::create_dir(root.join("src")).unwrap();
+        fs::write(root.join("src/main.rs"), "fn main() {}\n").unwrap();
+        fs::write(root.join("README.md"), "# SSP\n").unwrap();
+
+        let exclude = vec!["src/*.rs".to_string()];
+        let ignore_names = HashSet::new();
+        let opts = test_opts(&root, false, false, &ignore_names, &[], &exclude);
+
+        let tree = build_tree(&root, &opts);
+        let src = tree.children.iter().find(|node| node.name() == "src").unwrap();
+
+        assert_eq!(src.kind, NodeKind::Dir);
+        assert!(src.children.is_empty());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn test_opts<'a>(
+        root: &'a Path,
+        show_hidden: bool,
+        respect_gitignore: bool,
+        ignore_names: &'a HashSet<String>,
+        include_globs: &'a [String],
+        exclude_globs: &'a [String],
+    ) -> WalkOptions<'a> {
+        WalkOptions {
+            root,
+            max_depth: None,
+            show_hidden,
+            respect_gitignore,
+            ignore_names,
+            include_globs,
+            exclude_globs,
+            extension_filter: None,
+            dirs_only: false,
+            files_only: false,
+            prune: false,
+            sort: SortKey::Name,
+            reverse: false,
+            dirs_first: true,
+            git_status: None,
+        }
+    }
+
+    fn child_names(node: &crate::tree::Node) -> Vec<String> {
+        node.children
+            .iter()
+            .map(|child| child.name().to_string())
+            .collect()
+    }
+
+    fn temp_root(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("{name}-{nanos}"));
+        fs::create_dir(&root).unwrap();
+        root
     }
 }
