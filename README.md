@@ -2,515 +2,343 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-0.1.1-blue)
+![Version](https://img.shields.io/badge/version-2.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Rust](https://img.shields.io/badge/rust-1.70+-orange)
 
-A powerful command-line tool for visualizing directory structures, analyzing code, and exporting project insights.
+A modern, configurable alternative to `tree` — with colors, icons, git integration,
+multiple output formats, and flexible filtering.
 
 </div>
 
-## 📑 Table of Contents
-
-- [Features](#features)
-- [Installation](#installation)
-  - [From Source](#from-source)
-  - [Quick Install (Linux/macOS)](#quick-install-linuxmacos)
-  - [Quick Install (Windows)](#quick-install-windows)
-- [Usage](#usage)
-- [Options](#options)
-- [Examples](#examples)
-- [Configuration](#configuration)
-- [Building](#building)
-- [Uninstallation](#uninstallation)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## ✨ Features
 
-- 🌳 **Beautiful tree structure** visualization with Unicode characters
-- 📊 **Code analysis** with detailed statistics
-- 💾 **Export to file** for documentation
-- 📝 **Code extraction** from all project files
-- 🔍 **Smart filtering** by extension, depth, and folders
-- 📈 **Line counting** for files
-- 🚀 **Fast and lightweight** written in Rust
-- 🌐 **Cross-platform** support (Linux, macOS, Windows)
+- 🌳 **Beautiful tree** with Unicode box-drawing (or `--ascii` fallback)
+- 🎨 **ANSI colors + Nerd Font icons** — auto-detected, fully themeable
+- 🌿 **Git integration** — respect `.gitignore` by default, show per-file status markers
+- 🔍 **Flexible filtering** — hidden files, glob patterns, extension, depth, prune
+- 🔀 **Sorting** — by name, size, modification time, or extension; reversible
+- 📤 **Multiple output formats** — tree, JSON, Markdown, flat list
+- 📊 **Code analysis** — line counts, blank/comment/code breakdown, function/struct counts
+- 💾 **Export to file** — pipe any format to a file with `-o`
+- ⚙️ **TOML config + themes** — persistent defaults, named color themes
+- 🚀 **Fast** — built with Rust, uses ripgrep's `ignore` crate for traversal
+- 🌐 **Cross-platform** — Linux, macOS, other unix-likes, Windows
 
 ## 🚀 Installation
 
 ### Prerequisites
 
-- Rust 1.70 or higher
-- Cargo (comes with Rust)
+- Rust 1.70+  (`rustup.rs`)
 
 ### From Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/Flaykky/show-struct-of-folder
 cd show-struct-of-folder
-
-# Build the project
 cargo build --release
-
-# The binary will be at: target/release/ssp
+# binary at: target/release/ssp
 ```
 
-### Quick Install (Linux/macOS)
-
-Run the installation script:
+### Quick Install (Linux / macOS)
 
 ```bash
 chmod +x install.sh
-./install.sh
+./install.sh          # installs to ~/.local/bin/ssp
 ```
 
-This will:
-- Build the project in release mode
-- Copy the binary to `~/.local/bin/`
-- Add to PATH if needed
-- Make it available system-wide
-
-### Quick Install (Windows)
-
-Run the installation script in PowerShell (as Administrator):
+### Quick Install (Windows — PowerShell as Admin)
 
 ```powershell
-.\install.ps1
+.\win_install.ps1             # installs to C:\Program Files\ssp\
+.\win_install.ps1 -UserInstall  # installs to %USERPROFILE%\.local\bin\
 ```
 
-This will:
-- Build the project in release mode
-- Copy the binary to `C:\Program Files\ssp\`
-- Add to system PATH
-- Make it available system-wide
+### Via `cargo install` (any platform)
 
-**Alternative (without admin rights):**
-
-```powershell
-.\install.ps1 -UserInstall
+```bash
+cargo install --git https://github.com/Flaykky/show-struct-of-folder
 ```
-
-This installs to `%USERPROFILE%\.local\bin\` instead.
 
 ## 📖 Usage
 
-```bash
+```
 ssp [OPTIONS] [DIRECTORY]
 ```
 
-If no directory is specified, SSP analyzes the current working directory.
+If no directory is given, the current working directory is used.
 
 ## ⚙️ Options
 
-| Short | Long | Description | Example |
-|-------|------|-------------|---------|
-| `-i` | `--ignore` | Ignore specified folder | `ssp -i node_modules` |
-| `-of` | `--only-folders` | Show only directories | `ssp -of` |
-| `-l` | `--lines` | Show line count for files | `ssp -l` |
-| `-e` | `--extension` | Filter by file extension | `ssp -e rs` |
-| `-d` | `--depth` | Limit display depth | `ssp -d 2` |
-| `-o` | `--output` | Save output to file | `ssp -o struct.txt` |
-| `-sc` | `--show-code` | Show code from all files | `ssp -sc` |
-| `-a` | `--analyze` | Analyze code statistics | `ssp -a` |
-| `-h` | `--help` | Show help message | `ssp -h` |
+### Display
 
-### 🔍 Detailed Descriptions
+| Flag | Description |
+|------|-------------|
+| `--color <auto\|always\|never>` | ANSI color mode (default: `auto`) |
+| `--icons <auto\|always\|never>` | Nerd Font icons (default: `auto`) |
+| `--no-icons` | Disable icons |
+| `--ascii` | ASCII connectors instead of Unicode (`|-- `, `` `-- ``) |
+| `-f, --full-path` | Show path relative to root for each entry |
 
-#### `--ignore` / `-i`
-Exclude specific folders from the output. Can be used multiple times.
+### Depth
 
-**Default ignored:** `.git`, `node_modules`, `__pycache__`, `target`, `.idea`, `.vscode`
-
-```bash
-ssp -i build -i dist -i tmp
-```
-
-#### `--only-folders` / `-of`
-Display only directories, hiding all files.
-
-```bash
-ssp -of
-```
-
-#### `--lines` / `-l`
-Display the number of lines next to each file.
-
-```bash
-ssp -l
-# Output: main.rs (150)
-```
-
-#### `--extension` / `-e`
-Show only files with a specific extension.
-
-```bash
-ssp -e py    # Python files only
-ssp -e js    # JavaScript files only
-```
-
-#### `--depth` / `-d`
-Limit how deep the tree traverses.
-
-```bash
-ssp -d 2    # Show only 2 levels
-```
-
-#### `--output` / `-o`
-Save the entire output to a file instead of printing to console.
-
-```bash
-ssp -o project_structure.txt
-ssp -sc -a -o full_report.md
-```
-
-#### `--show-code` / `-sc`
-Extract and display the code content from all files in the project.
-
-```bash
-ssp -sc
-```
-
-**Output format:**
-```
-project/
-├── src
-│   ├── main.rs
-│   └── utils.rs
-└── Cargo.toml
-
-=== CODE CONTENT ===
-
-1. src/main.rs:
-
-fn main() {
-    println!("Hello, world!");
-}
-
---------------------------------------------------------------------------------
-
-2. src/utils.rs:
-
-pub fn helper() -> i32 {
-    42
-}
-```
-
-#### `--analyze` / `-a`
-Perform detailed code analysis with statistics.
-
-```bash
-ssp -a
-```
-
-**Analysis includes:**
-- Total files and lines
-- Blank and comment lines
-- Files grouped by extension
-- Lines per extension
-- Function and class counts
-- Type declarations (int, float, string, bool)
-- Code density percentage
-
-## 📚 Examples
-
-### Basic Usage
-
-```bash
-# Current directory structure
-ssp
-
-# Specific directory
-ssp /path/to/project
-
-# With line counts
-ssp -l
-```
+| Flag | Description |
+|------|-------------|
+| `-d, --depth <N>` | Limit display depth (alias: `-L`) |
 
 ### Filtering
 
-```bash
-# Only folders
-ssp -of
+| Flag | Description |
+|------|-------------|
+| `-a, --all` | Show hidden files (starting with `.`) |
+| `--no-gitignore` | Ignore `.gitignore` rules (respected by default) |
+| `-i, --ignore <NAME>` | Ignore a folder by name (repeatable) |
+| `-P, --pattern <GLOB>` | Include only files matching a glob (repeatable) |
+| `-I, --ignore-glob <GLOB>` | Exclude entries matching a glob (repeatable) |
+| `-e, --extension <EXT>` | Show only files with this extension |
+| `-D, --dirs-only` | Show only directories |
+| `--files-only` | Show only files |
+| `--prune` | Hide empty directories |
 
-# Only Rust files
-ssp -e rs
+**Default ignored:** `.git`, `node_modules`, `target`, `__pycache__`, `.idea`, `.vscode`
+(override with `--ignore` or via config file)
 
-# Python files with line counts
-ssp -e py -l
+### Sorting
 
-# First 3 levels only
-ssp -d 3
+| Flag | Description |
+|------|-------------|
+| `-s, --sort <name\|size\|time\|ext\|none>` | Sort key (default: `name`) |
+| `-r, --reverse` | Reverse sort order |
+| `--dirs-first` | List directories before files (default: on) |
+| `--no-dirs-first` | Mix directories and files in sort order |
 
-# Ignore multiple folders
-ssp -i build -i dist -i __pycache__
-```
+### Git
+
+| Flag | Description |
+|------|-------------|
+| `--git` | Show git status markers per entry |
+
+Status markers: `●` staged · `✚` modified · `?` untracked · `!` ignored
+
+### Metadata
+
+| Flag | Description |
+|------|-------------|
+| `-l, --lines` | Show line count next to each file |
+| `--sizes` | Show file sizes |
+| `--summary` | Print total directories, files, and size |
 
 ### Code Analysis
 
+| Flag | Description |
+|------|-------------|
+| `-A, --analyze` | Analyze code: lines, comments, functions, types |
+| `--show-code` | Print full file contents after the tree |
+
+### Output
+
+| Flag | Description |
+|------|-------------|
+| `-o, --output <FILE>` | Write output to a file |
+| `--format <tree\|json\|markdown\|list>` | Output format (default: `tree`) |
+
+### Config / Themes
+
+| Flag | Description |
+|------|-------------|
+| `--config <FILE>` | Use a specific config file |
+| `--theme <NAME>` | Select a named theme from the config |
+| `--no-config` | Ignore the config file entirely |
+| `--generate-config` | Write a default config to `~/.config/ssp/config.toml` |
+
+## 🎨 Config File & Themes
+
+The config file is auto-loaded from:
+
+1. `--config <FILE>`
+2. `$SSP_CONFIG` environment variable
+3. `~/.config/ssp/config.toml` (Linux/macOS) / `%APPDATA%\ssp\config.toml` (Windows)
+
+Generate the default config:
+
 ```bash
-# Full analysis
-ssp -a
-
-# Analysis with code content
-ssp -sc -a
-
-# Analyze specific file type
-ssp -e rs -a
-
-# Save analysis to file
-ssp -a -o analysis.txt
+ssp --generate-config
 ```
 
-### Export & Documentation
+Example `config.toml`:
 
-```bash
-# Save structure to file
-ssp -o structure.txt
+```toml
+[defaults]
+icons      = true
+color      = "auto"       # auto | always | never
+sort       = "name"       # name | size | time | ext | none
+dirs_first = true
+show_hidden = false
+ignore     = [".git", "node_modules", "target"]
+theme      = "default"
 
-# Full project documentation
-ssp -l -sc -a -o full_docs.md
+[themes.default.colors]
+dir      = "blue"
+file     = "white"
+symlink  = "cyan"
+exec     = "green"
+archive  = "red"
+meta     = "bright_black"
 
-# Quick reference with code
-ssp -d 2 -sc -o quick_ref.txt
+# [themes.dark.colors]
+# dir = "bright_blue"
 ```
 
-### Combined Examples
+## 📚 Examples
 
 ```bash
-# Python project analysis
-ssp -e py -l -a -o python_analysis.txt
+# Basic tree
+ssp
+ssp /path/to/project
 
-# Frontend structure (ignore build artifacts)
-ssp -i node_modules -i dist -i build -of
+# Show hidden files, 3 levels deep
+ssp -a -d 3
 
-# Rust project with code and stats
-ssp -e rs -sc -a -o rust_project.md
+# Only Rust files with line counts
+ssp -e rs -l
 
-# Quick overview (2 levels, folders only)
-ssp -d 2 -of
+# Sort by size, largest first
+ssp --sizes -s size -r
+
+# Glob: only config files
+ssp -P '*.toml' -P '*.yaml'
+
+# Exclude build artifacts
+ssp -I '*.lock' -I '*.log'
+
+# Git status markers
+ssp --git
+
+# Full analysis + code content → file
+ssp -A --show-code -o report.md
+
+# JSON output (pipe to jq)
+ssp --format json | jq '.children[].name'
+
+# Markdown outline
+ssp --format markdown -d 2
+
+# Flat path list (for scripting)
+ssp --format list | grep '\.rs$'
+
+# ASCII mode (safe for all terminals)
+ssp --ascii
+
+# Summary line
+ssp --summary
+
+# Specific theme
+ssp --theme dark
 ```
 
-## 📊 Sample Outputs
+## 📊 Sample Output
 
-### Basic Structure
+### Tree (default)
+
 ```
 my-project/
-├── src
-│   ├── main.rs
-│   ├── lib.rs
-│   └── utils
-│       ├── parser.rs
-│       └── formatter.rs
-├── tests
-│   └── integration.rs
+├── src/
+│   ├── main.rs (250 lines)
+│   └── lib.rs (180 lines)
+├── tests/
+│   └── integration.rs (90 lines)
 ├── Cargo.toml
 └── README.md
+
+1 directories, 5 files, 28.3K
 ```
 
-### With Line Counts
-```
-my-project/
-├── src
-│   ├── main.rs (150)
-│   ├── lib.rs (200)
-│   └── utils
-│       ├── parser.rs (320)
-│       └── formatter.rs (180)
-├── tests
-│   └── integration.rs (450)
-├── Cargo.toml (25)
-└── README.md (100)
-```
+### Code Analysis (`-A`)
 
-### Analysis Output
 ```
 === CODE ANALYSIS ===
 
-Total Files: 12
-Total Lines: 2,847
-Blank Lines: 342
-Comment Lines: 518
-Code Lines: 1,987
+Total Files:   11
+Total Lines:   1921
+Blank Lines:   312
+Comment Lines: 183
+Code Lines:    1426
+Code Density:  74.2%
 
 Files by Extension:
-  .rs: 8 files
-  .toml: 2 files
-  .md: 2 files
+  .rs         11 files
 
 Lines by Extension:
-  .rs: 2,450 lines
-  .toml: 147 lines
-  .md: 250 lines
+  .rs         1921 lines
 
 Code Elements (approximate):
-  Functions: 67
-  Classes/Structs: 15
-  Int declarations: 23
-  Float declarations: 8
-  String declarations: 89
-  Bool declarations: 34
-
-Code Density: 69.8%
+  Functions:        61
+  Classes/Structs:  14
+  Int declarations: 33
+  Float decls:      4
+  String decls:     58
+  Bool decls:       54
 ```
 
-## 🔧 Configuration
+### JSON (`--format json`)
 
-SSP doesn't require configuration files. All settings are passed via command-line arguments.
+```json
+{
+  "name": "my-project",
+  "type": "directory",
+  "children": [
+    { "name": "src", "type": "directory", "children": [...] },
+    { "name": "Cargo.toml", "type": "file" }
+  ]
+}
+```
 
-### Default Ignored Folders
+## 🔧 Default Ignored Folders
 
-- `.git` - Git repository data
-- `node_modules` - Node.js dependencies
-- `__pycache__` - Python cache
-- `target` - Rust build artifacts
-- `.idea` - IntelliJ IDEA
-- `.vscode` - Visual Studio Code
+`.git` · `node_modules` · `target` · `__pycache__` · `.idea` · `.vscode`
 
-You can override these with `-i` flag.
+Override via `-i <name>` (add extra) or set `ignore = [...]` in `config.toml` (replace).
 
 ## 🛠️ Building
 
-### Development Build
-
 ```bash
-cargo build
-./target/debug/ssp
+cargo build              # debug
+cargo build --release    # release (target/release/ssp)
+cargo test               # run tests
+cargo clippy             # lint
 ```
-
-### Release Build
-
-```bash
-cargo build --release
-./target/release/ssp
-```
-
-### Run Without Installing
-
-```bash
-cargo run -- [OPTIONS] [DIRECTORY]
-
-# Examples:
-cargo run -- -l
-cargo run -- -a /path/to/project
-```
-
-### Run Tests
-
-```bash
-cargo test
-```
-
-## 📦 Creating Distribution Package
-
-### Linux (DEB)
-
-```bash
-./scripts/create_deb.sh
-# Creates ssp_2.0.0_amd64.deb
-```
-
-### Linux (RPM)
-
-```bash
-./scripts/create_rpm.sh
-# Creates ssp-2.0.0.rpm
-```
-
-### Windows (Installer)
-
-```powershell
-.\scripts\create_installer.ps1
-# Creates ssp-installer.exe
-```
-
-## 🗑️ Uninstallation
-
-### Linux/macOS
-
-```bash
-./uninstall.sh
-```
-
-Or manually:
-```bash
-rm ~/.local/bin/ssp
-```
-
-### Windows
-
-```powershell
-.\uninstall.ps1
-```
-
-Or manually:
-- Remove `C:\Program Files\ssp\` (or `%USERPROFILE%\.local\bin\`)
-- Remove from PATH environment variable
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow Rust naming conventions
-- Add tests for new features
-- Update documentation
-- Keep code clean and commented
 
 ## 📝 Roadmap
 
-- [ ] Package for apt/dnf/pacman
-- [ ] Add ignore patterns from `.gitignore`
-- [ ] Custom output formats (JSON, XML)
-- [ ] Syntax highlighting in code output
-- [ ] Git integration (show file status)
-- [ ] More detailed code metrics
-- [ ] Plugin system
-- [ ] Configuration file support
-- [ ] Interactive TUI mode
+- [ ] Per-file-type coloring (exec, image, archive)
+- [ ] LS_COLORS environment variable support
+- [ ] Native git2 integration (no `git` binary needed)
+- [ ] Interactive TUI / fuzzy navigation
+- [ ] Package for apt/dnf/pacman/homebrew
+- [ ] Syntax highlighting in `--show-code` output
+- [ ] Plugin/script hooks
 
 ## 🐛 Troubleshooting
 
-### Tree characters not displaying
+**Icons show as `?` boxes** — install a [Nerd Font](https://www.nerdfonts.com) and configure
+your terminal to use it, or pass `--no-icons`.
 
-**Issue:** Box drawing characters appear as `?` or weird symbols.
+**No colors** — ensure your terminal supports ANSI. Pass `--color always` to force them.
+On Windows, run in Windows Terminal or PowerShell 7+.
 
-**Solution:**
-- Ensure terminal supports UTF-8
-- Set locale: `export LANG=en_US.UTF-8`
-- Use a modern terminal (iTerm2, Windows Terminal, Alacritty)
+**`.gitignore` not respected** — by default gitignore IS respected. Pass `--no-gitignore`
+to disable it.
 
-### Permission denied errors
+**Slow on very large repos** — use `-d` to limit depth and `-i` to skip heavy directories.
 
-**Issue:** Cannot read certain directories.
+## 🤝 Contributing
 
-**Solution:**
-- Run with appropriate permissions
-- Use `-i` to ignore problematic directories
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes
+4. Open a Pull Request
 
-### Slow performance on large projects
-
-**Issue:** Takes too long to analyze.
-
-**Solution:**
-- Use `-d` to limit depth
-- Use `-i` to ignore large folders (node_modules, target)
-- Use `-e` to filter by extension
-
-
-## 👏 Acknowledgments
-
-- Inspired by the `tree` command
-- Built with ❤️ using Rust
-- Thanks to all contributors
+Please follow Rust naming conventions and run `cargo clippy` before submitting.
 
 ## 📧 Contact
 
@@ -518,19 +346,6 @@ Contributions are welcome! Please follow these steps:
 - **GitHub:** [@Flaykky](https://github.com/Flaykky)
 - **Repository:** [show-struct-of-folder](https://github.com/Flaykky/show-struct-of-folder)
 
----
+## 📝 License
 
-<div align="center">
-
-**Made with Rust**
-
-If you find this tool useful, please ⭐ star the repository!
-
-</div>
-
-
-## license 
-
-Distributed under the MIT License. See [LICENSE](LICENSE) file for details.
-
-
+MIT — see [LICENSE](LICENSE).
